@@ -1,0 +1,59 @@
+name: CICD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+  release:
+    types: [created]
+
+jobs:
+  test:
+    name: Test Module
+    runs-on: windows-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester
+
+      - name: Run Pester Tests
+        shell: pwsh
+        run: |
+          Invoke-Pester -Path 'XlsCoordinatesConverter-wts' -CI
+      - name: Archive module files
+        shell: pwsh
+        run: |
+          Compress-Archive -Path '.\*' -DestinationPath "Module.zip" -Force
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: module-archive
+          path: Module.zip
+
+  publish:
+    name: Publish to PowerShell Gallery
+    runs-on: windows-latest
+
+    needs: test
+
+    environment: Production
+
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Publish Module
+        shell: pwsh
+        env:
+          POWERSHELL_GALLERY_API_KEY: ${{ secrets.POWERSHELL_GALLERY_API_KEY }}
+        run: |
+          Publish-Module -Path '.' -NuGetApiKey $env:POWERSHELL_GALLERY_API_KEY -Confirm:$false
