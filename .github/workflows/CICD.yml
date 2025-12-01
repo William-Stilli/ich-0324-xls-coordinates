@@ -2,31 +2,40 @@ name: CICD
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-  release:
-    types: [created]
+    branches:
+      - "feature/**"
+      - "develop"
+      - "main"
 
 jobs:
-  test:
-    name: Test Module
-    runs-on: windows-latest
+  quality:
+    name: Run Pester and PSSA
+    runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Pester
+      - name: Run PSScriptanalyzer
         shell: pwsh
         run: |
-          Install-Module -Name Pester -Force -SkipPublisherCheck -Scope CurrentUser
-          Import-Module Pester
+          Invoke-ScriptAnalyzer -Path . -Recurse -Severity Warning -ErrorAction Stop
 
       - name: Run Pester Tests
         shell: pwsh
         run: |
-          Invoke-Pester -Path 'XlsCoordinatesConverter-wts' -CI
+          Invoke-Pester -Path "./XlsCoordinatesConverter-wts" -Passthru
+
+  build:
+    name: Build Module
+    needs: quality
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/head/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Logic
+        shell: pwsh
+        run: |
+          Invoke-Build Build
       - name: Archive module files
         shell: pwsh
         run: |
@@ -38,20 +47,14 @@ jobs:
           path: Module.zip
 
   publish:
-    name: Publish to PowerShell Gallery
-    runs-on: windows-latest
-
-    needs: test
-
-    environment: Production
-
-    if: github.event_name == 'release'
-
+    name: Publish to Gallery
+    needs: build
+    if: github.ref == 'refs/head/main'
+    runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Publish Module
+      - name: Publish to PowerShell Gallery
         shell: pwsh
         env:
           POWERSHELL_GALLERY_API_KEY: ${{ secrets.POWERSHELL_GALLERY_API_KEY }}
